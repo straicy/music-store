@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Environment
+.env
+
+# Uploads (не комітимо медіафайли)
+uploads/
+
+# IDE
+.idea/
+.vscode/
+*.egg-info/
+dist/
+build/

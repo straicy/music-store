@@ -1,0 +1,120 @@
+/* ── Дизайн-токени — Glassmorphism Dark ─────────────────── */
+:root {
+  --bg-base:        #080b14;
+  --bg-surface:     rgba(255,255,255,0.04);
+  --bg-elevated:    rgba(255,255,255,0.07);
+  --bg-hover:       rgba(255,255,255,0.11);
+
+  --accent:         #f5a623;
+  --accent-hover:   #ffbe4d;
+  --accent-dim:     rgba(245,166,35,0.12);
+  --accent-glow:    rgba(245,166,35,0.35);
+
+  --accent2:        #4f8ef7;
+  --accent2-glow:   rgba(79,142,247,0.3);
+
+  --text-primary:   #eef2ff;
+  --text-secondary: #8892b0;
+  --text-muted:     #4a5578;
+
+  --glass-bg:       rgba(255,255,255,0.05);
+  --glass-border:   rgba(255,255,255,0.10);
+  --glass-blur:     blur(20px);
+
+  --success:        #34d399;
+  --error:          #f87171;
+  --warning:        #f5a623;
+  --info:           #4f8ef7;
+
+  --radius-sm:      8px;
+  --radius-md:      12px;
+  --radius-lg:      18px;
+  --radius-xl:      28px;
+  --radius-2xl:     40px;
+
+  --shadow-sm:      0 2px 8px rgba(0,0,0,0.5);
+  --shadow-md:      0 8px 32px rgba(0,0,0,0.6);
+  --shadow-lg:      0 16px 48px rgba(0,0,0,0.7);
+  --shadow-accent:  0 0 40px var(--accent-glow);
+  --shadow-glow-sm: 0 0 16px var(--accent-glow);
+
+  --border:         rgba(255,255,255,0.09);
+  --border-focus:   rgba(245,166,35,0.6);
+
+  --transition:      0.2s ease;
+  --transition-slow: 0.4s cubic-bezier(0.16,1,0.3,1);
+}
+
+/* ── Reset ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 0%,  rgba(79,142,247,0.13)  0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 90% 100%, rgba(245,166,35,0.10)  0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 50% 50%,  rgba(255,255,255,0.02) 0%, transparent 70%);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+button { cursor: pointer; border: none; background: none; font-family: inherit; }
+input, textarea, select { font-family: inherit; }
+
+/* ── Glass утиліт ────────────────────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.12); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* ── Утиліти ─────────────────────────────────────────────── */
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+}
+
+/* Skeleton */
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Transitions */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.22s ease; }
+.fade-enter-from, .fade-leave-to       { opacity: 0; }
+
+.slide-up-enter-active { transition: all 0.28s cubic-bezier(0.16,1,0.3,1); }
+.slide-up-leave-active { transition: all 0.18s ease; }
+.slide-up-enter-from   { opacity: 0; transform: translateY(14px) scale(0.98); }
+.slide-up-leave-to     { opacity: 0; transform: translateY(-6px); }
