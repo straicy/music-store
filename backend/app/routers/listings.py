@@ -5,22 +5,25 @@ from bson import ObjectId
 from bson.errors import InvalidId
 import math
 import os
-import uuid
-from PIL import Image as PILImage
-import aiofiles
+import cloudinary
+import cloudinary.uploader
 
 from app.core.database import get_db
 from app.core.security import get_current_user, get_optional_user
 from app.core.config import settings
 from app.schemas.listing import (
-    ListingCreate, ListingUpdate, ListingPublic,
-    ListingShort, ListingCategory, ListingCondition
+    ListingCreate, ListingUpdate, ListingCategory, ListingCondition
 )
 
 router = APIRouter(prefix="/listings", tags=["listings"])
 
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-
+def configure_cloudinary():
+    cloudinary.config(
+        cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+        api_key=os.getenv("CLOUDINARY_API_KEY", ""),
+        api_secret=os.getenv("CLOUDINARY_API_SECRET", ""),
+        secure=True
+    )
 
 def oid(id_str: str) -> ObjectId:
     try:
@@ -60,11 +63,9 @@ def listing_to_public(doc: dict, user_favorites: set = None) -> dict:
     }
 
 
-# ───── Каталог / Пошук ─────
-
 @router.get("/")
 async def get_listings(
-    q: Optional[str] = Query(None, description="Пошук по назві/опису"),
+    q: Optional[str] = Query(None),
     category: Optional[ListingCategory] = None,
     condition: Optional[ListingCondition] = None,
     brand: Optional[str] = None,
@@ -108,7 +109,6 @@ async def get_listings(
     cursor = db.listings.find(query).sort(sort_map[sort]).skip(skip).limit(limit)
     docs = await cursor.to_list(length=limit)
 
-    # Обране поточного користувача
     favorites = set()
     if current_user:
         fav_docs = await db.favorites.find(
@@ -125,7 +125,7 @@ async def get_listings(
     }
 
 
-@router.get("/my", response_model=None)
+@router.get("/my")
 async def get_my_listings(
     status_filter: Optional[str] = Query(None, alias="status"),
     current_user=Depends(get_current_user),
@@ -134,7 +134,6 @@ async def get_my_listings(
     query = {"seller_id": str(current_user["_id"])}
     if status_filter:
         query["status"] = status_filter
-
     docs = await db.listings.find(query).sort("created_at", -1).to_list(length=None)
     return {"items": [listing_to_short(d) for d in docs], "total": len(docs)}
 
@@ -143,11 +142,9 @@ async def get_my_listings(
 async def get_listing(listing_id: str, current_user=Depends(get_optional_user)):
     db = get_db()
     doc = await db.listings.find_one({"_id": oid(listing_id)})
-
     if not doc:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
 
-    # Забороняємо перегляд неактивних оголошень (крім власника і адміна)
     if doc["status"] != "active":
         if not current_user:
             raise HTTPException(status_code=404, detail="Оголошення не знайдено")
@@ -155,7 +152,6 @@ async def get_listing(listing_id: str, current_user=Depends(get_optional_user)):
         if user_id != doc["seller_id"] and current_user.get("role") != "admin":
             raise HTTPException(status_code=404, detail="Оголошення не знайдено")
 
-    # Збільшуємо лічильник переглядів
     await db.listings.update_one({"_id": oid(listing_id)}, {"$inc": {"views": 1}})
     doc["views"] = doc.get("views", 0) + 1
 
@@ -171,12 +167,9 @@ async def get_listing(listing_id: str, current_user=Depends(get_optional_user)):
     return listing_to_public(doc, favorites)
 
 
-# ───── Створення оголошення ─────
-
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_listing(data: ListingCreate, current_user=Depends(get_current_user)):
     db = get_db()
-
     doc = {
         **data.model_dump(),
         "category": data.category.value,
@@ -190,20 +183,14 @@ async def create_listing(data: ListingCreate, current_user=Depends(get_current_u
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
     }
-
     result = await db.listings.insert_one(doc)
-
-    # Оновлюємо лічильник оголошень у юзера
     await db.users.update_one(
         {"_id": current_user["_id"]},
         {"$inc": {"listings_count": 1}}
     )
-
     doc["_id"] = result.inserted_id
     return listing_to_public(doc)
 
-
-# ───── Оновлення оголошення ─────
 
 @router.put("/{listing_id}")
 async def update_listing(
@@ -213,10 +200,8 @@ async def update_listing(
 ):
     db = get_db()
     doc = await db.listings.find_one({"_id": oid(listing_id)})
-
     if not doc:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
-
     if str(current_user["_id"]) != doc["seller_id"] and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Немає доступу")
 
@@ -227,7 +212,6 @@ async def update_listing(
         update_data["condition"] = update_data["condition"].value
     if "status" in update_data:
         update_data["status"] = update_data["status"].value
-
     update_data["updated_at"] = datetime.utcnow()
 
     await db.listings.update_one({"_id": oid(listing_id)}, {"$set": update_data})
@@ -235,29 +219,21 @@ async def update_listing(
     return listing_to_public(updated)
 
 
-# ───── Видалення оголошення ─────
-
 @router.delete("/{listing_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_listing(listing_id: str, current_user=Depends(get_current_user)):
     db = get_db()
     doc = await db.listings.find_one({"_id": oid(listing_id)})
-
     if not doc:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
-
     if str(current_user["_id"]) != doc["seller_id"] and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Немає доступу")
-
     await db.listings.delete_one({"_id": oid(listing_id)})
     await db.users.update_one(
         {"_id": current_user["_id"]},
         {"$inc": {"listings_count": -1}}
     )
-    # Видаляємо з обраного всіх юзерів
     await db.favorites.delete_many({"listing_id": listing_id})
 
-
-# ───── Завантаження зображень ─────
 
 @router.post("/{listing_id}/images", status_code=status.HTTP_201_CREATED)
 async def upload_images(
@@ -265,56 +241,42 @@ async def upload_images(
     files: List[UploadFile] = File(...),
     current_user=Depends(get_current_user),
 ):
+    configure_cloudinary()
     db = get_db()
     doc = await db.listings.find_one({"_id": oid(listing_id)})
-
     if not doc:
         raise HTTPException(status_code=404, detail="Оголошення не знайдено")
-
     if str(current_user["_id"]) != doc["seller_id"]:
         raise HTTPException(status_code=403, detail="Немає доступу")
 
     current_images = doc.get("images", [])
     if len(current_images) + len(files) > 10:
-        raise HTTPException(status_code=400, detail="Максимум 10 фото на оголошення")
+        raise HTTPException(status_code=400, detail="Максимум 10 фото")
 
-    upload_dir = os.path.join(settings.UPLOAD_DIR, "listings", listing_id)
-    os.makedirs(upload_dir, exist_ok=True)
+    ALLOWED = {"image/jpeg", "image/png", "image/webp"}
+    saved_urls = []
 
-    saved_paths = []
     for file in files:
-        if file.content_type not in ALLOWED_IMAGE_TYPES:
-            raise HTTPException(status_code=400, detail=f"Дозволено лише JPEG, PNG, WebP")
-
+        if file.content_type not in ALLOWED:
+            raise HTTPException(status_code=400, detail="Дозволено лише JPEG, PNG, WebP")
         content = await file.read()
-        if len(content) > settings.MAX_IMAGE_SIZE_MB * 1024 * 1024:
-            raise HTTPException(status_code=400, detail=f"Файл перевищує {settings.MAX_IMAGE_SIZE_MB} МБ")
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Файл перевищує 5 МБ")
 
-        # Зберігаємо та оптимізуємо
-        ext = file.filename.rsplit(".", 1)[-1].lower()
-        filename = f"{uuid.uuid4()}.{ext}"
-        filepath = os.path.join(upload_dir, filename)
-
-        async with aiofiles.open(filepath, "wb") as f:
-            await f.write(content)
-
-        # Оптимізація через Pillow
-        try:
-            img = PILImage.open(filepath)
-            img.thumbnail((1200, 1200))
-            img.save(filepath, optimize=True, quality=85)
-        except Exception:
-            pass
-
-        url_path = f"/uploads/listings/{listing_id}/{filename}"
-        saved_paths.append(url_path)
+        # Завантажуємо в Cloudinary
+        result = cloudinary.uploader.upload(
+            content,
+            folder=f"music_store/{listing_id}",
+            resource_type="image",
+            transformation=[{"width": 1200, "height": 900, "crop": "limit", "quality": "auto"}]
+        )
+        saved_urls.append(result["secure_url"])
 
     await db.listings.update_one(
         {"_id": oid(listing_id)},
-        {"$push": {"images": {"$each": saved_paths}}}
+        {"$push": {"images": {"$each": saved_urls}}}
     )
-
-    return {"images": saved_paths, "message": f"Завантажено {len(saved_paths)} фото"}
+    return {"images": saved_urls, "message": f"Завантажено {len(saved_urls)} фото"}
 
 
 @router.delete("/{listing_id}/images/{image_name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -325,16 +287,14 @@ async def delete_image(
 ):
     db = get_db()
     doc = await db.listings.find_one({"_id": oid(listing_id)})
-
     if not doc or str(current_user["_id"]) != doc["seller_id"]:
         raise HTTPException(status_code=403, detail="Немає доступу")
 
-    image_url = f"/uploads/listings/{listing_id}/{image_name}"
-    await db.listings.update_one(
-        {"_id": oid(listing_id)},
-        {"$pull": {"images": image_url}}
-    )
-
-    filepath = os.path.join(settings.UPLOAD_DIR, "listings", listing_id, image_name)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    # Видаляємо URL що містить image_name
+    images = doc.get("images", [])
+    to_remove = [img for img in images if image_name in img]
+    for img_url in to_remove:
+        await db.listings.update_one(
+            {"_id": oid(listing_id)},
+            {"$pull": {"images": img_url}}
+        )
