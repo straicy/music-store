@@ -50,7 +50,7 @@ export const useListingsStore = defineStore('listings', () => {
 function setFilter(key, value) {
   filters.value[key] = value
   if (key !== 'page') {
-    filters.value.page = 1  // скидаємо тільки якщо змінюємо не сторінку
+    filters.value.page = 1
   }
 }
 
